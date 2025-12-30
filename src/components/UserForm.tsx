@@ -56,8 +56,7 @@ const UserForm: React.FC<UserFormProps> = ({ user, onClose, onSave, existingUser
     }
 
     const finalData: Partial<User> = { 
-      ...formData,
-      id: formData.mobileNumber
+      ...formData
     };
 
     if (!user || formData.mobileNumber !== user.mobileNumber || formData.designation !== user.designation) {

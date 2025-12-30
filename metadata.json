@@ -1,7 +1,0 @@
-{
-  "name": "Spectrum",
-  "description": "A high-end, professional user management PWA for organizational member registry.",
-  "requestFramePermissions": [
-    "camera"
-  ]
-}

@@ -173,6 +173,8 @@ const UserManagement: React.FC = () => {
   const [filterDesignation, setFilterDesignation] = useState<string>('All');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [usersPerPage] = useState(12);
 
   const SYSTEM_ADMIN: User = {
     id: 'admin',
@@ -193,48 +195,26 @@ const UserManagement: React.FC = () => {
       setLoading(true);
       setError(null);
       
+      // Clear old localStorage format
+      localStorage.removeItem('usersphere_users');
+      
       // Test Firestore connection first
       const connectionTest = await UserService.testConnection();
       if (!connectionTest) {
         throw new Error('Firestore connection failed');
       }
       
-      // Try to load from Firebase first
+      // Load from Firebase
       const firebaseUsers = await UserService.getAllUsers();
       
       // Always include system admin
       const allUsers = [SYSTEM_ADMIN, ...firebaseUsers.filter(u => u.id !== 'admin')];
       setUsers(allUsers);
       
-      // Fallback to localStorage if Firebase fails and no users exist
-      if (firebaseUsers.length === 0) {
-        const saved = localStorage.getItem('usersphere_users');
-        if (saved) {
-          try {
-            const localUsers: User[] = JSON.parse(saved);
-            const filteredLocalUsers = localUsers.filter(u => u.id !== 'admin');
-            setUsers([SYSTEM_ADMIN, ...filteredLocalUsers]);
-          } catch (e) {
-            console.error('Error parsing localStorage users:', e);
-          }
-        }
-      }
     } catch (err) {
       console.error('Error loading users:', err);
       setError(`Failed to load users: ${err.message}. Using offline mode.`);
-      
-      // Fallback to localStorage
-      const saved = localStorage.getItem('usersphere_users');
-      if (saved) {
-        try {
-          const localUsers: User[] = JSON.parse(saved);
-          setUsers(localUsers.some(u => u.id === 'admin') ? localUsers : [SYSTEM_ADMIN, ...localUsers]);
-        } catch (e) {
-          setUsers([SYSTEM_ADMIN]);
-        }
-      } else {
-        setUsers([SYSTEM_ADMIN]);
-      }
+      setUsers([SYSTEM_ADMIN]);
     } finally {
       setLoading(false);
     }
@@ -268,26 +248,48 @@ const UserManagement: React.FC = () => {
     });
   }, [users, searchTerm, filterDesignation]);
 
+  // Pagination logic
+  const totalPages = Math.ceil(filteredUsers.length / usersPerPage);
+  const startIndex = (currentPage - 1) * usersPerPage;
+  const paginatedUsers = filteredUsers.slice(startIndex, startIndex + usersPerPage);
+
+  // Reset to first page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filterDesignation]);
+
   const handleSaveUser = async (userData: Partial<User>) => {
     try {
       setError(null);
       
       if (editingUser) {
-        // Update existing user
+        // Update existing user - check if it's a real Firebase document
         if (editingUser.id !== 'admin') {
-          await UserService.updateUser(editingUser.id, userData);
+          try {
+            await UserService.updateUser(editingUser.id, userData);
+            const updated = users.map(u => u.id === editingUser.id ? { ...u, ...userData } as User : u);
+            setUsers(updated);
+          } catch (updateError) {
+            // If update fails, treat as new user
+            console.warn('Update failed, creating new user:', updateError);
+            const newUserData = { ...userData, createdAt: new Date().toISOString() } as Omit<User, 'id'>;
+            const firebaseId = await UserService.addUser(newUserData);
+            const newUser = { ...newUserData, id: firebaseId } as User;
+            const updated = users.filter(u => u.id !== editingUser.id).concat(newUser);
+            setUsers(updated);
+          }
+        } else {
+          // Admin user - only update locally
+          const updated = users.map(u => u.id === editingUser.id ? { ...u, ...userData } as User : u);
+          setUsers(updated);
         }
-        const updated = users.map(u => u.id === editingUser.id ? { ...u, ...userData } as User : u);
-        setUsers(updated);
-        localStorage.setItem('usersphere_users', JSON.stringify(updated));
       } else {
         // Add new user
         const newUserData = { ...userData, createdAt: new Date().toISOString() } as Omit<User, 'id'>;
-        const newUserId = await UserService.addUser(newUserData);
-        const newUser = { ...newUserData, id: newUserId } as User;
+        const firebaseId = await UserService.addUser(newUserData);
+        const newUser = { ...newUserData, id: firebaseId } as User;
         const updated = [newUser, ...users];
         setUsers(updated);
-        localStorage.setItem('usersphere_users', JSON.stringify(updated));
       }
       
       setIsFormModalOpen(false);
@@ -305,11 +307,22 @@ const UserManagement: React.FC = () => {
     if (window.confirm('Confirm record termination?')) {
       try {
         setError(null);
+        console.log('Deleting user with ID:', id);
+        
         await UserService.deleteUser(id);
+        console.log('User deleted from Firebase successfully');
+        
         const updated = users.filter(u => u.id !== id);
         setUsers(updated);
-        localStorage.setItem('usersphere_users', JSON.stringify(updated));
         setSelectedUser(null);
+        
+        // Adjust current page if needed
+        const newTotalPages = Math.ceil((updated.length - 1) / usersPerPage);
+        if (currentPage > newTotalPages && newTotalPages > 0) {
+          setCurrentPage(newTotalPages);
+        }
+        
+        console.log('User deleted successfully from local state');
       } catch (err) {
         console.error('Error deleting user:', err);
         setError('Failed to delete user. Please try again.');
@@ -373,8 +386,8 @@ const UserManagement: React.FC = () => {
             <Loader2 size={24} className="animate-spin text-slate-300 mb-2" />
             <p className="text-[11px] font-bold uppercase tracking-widest">Loading Registry</p>
           </div>
-        ) : filteredUsers.length > 0 ? (
-          filteredUsers.map((user) => (
+        ) : paginatedUsers.length > 0 ? (
+          paginatedUsers.map((user) => (
             <UserCard 
               key={user.id} 
               user={user} 
@@ -388,6 +401,44 @@ const UserManagement: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Pagination */}
+      {filteredUsers.length > usersPerPage && (
+        <div className="flex items-center justify-between bg-white p-3 rounded border border-slate-200">
+          <p className="text-[11px] text-slate-500 font-bold">
+            Showing {startIndex + 1}-{Math.min(startIndex + usersPerPage, filteredUsers.length)} of {filteredUsers.length}
+          </p>
+          <div className="flex gap-1">
+            <button
+              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+              disabled={currentPage === 1}
+              className="px-2 py-1 text-[11px] font-bold text-slate-500 hover:bg-slate-100 rounded disabled:opacity-50"
+            >
+              Previous
+            </button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+              <button
+                key={page}
+                onClick={() => setCurrentPage(page)}
+                className={`px-2 py-1 text-[11px] font-bold rounded ${
+                  currentPage === page 
+                    ? 'bg-slate-900 text-white' 
+                    : 'text-slate-500 hover:bg-slate-100'
+                }`}
+              >
+                {page}
+              </button>
+            ))}
+            <button
+              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+              disabled={currentPage === totalPages}
+              className="px-2 py-1 text-[11px] font-bold text-slate-500 hover:bg-slate-100 rounded disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
 
       {selectedUser && (
         <UserDetailModal 

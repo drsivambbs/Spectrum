@@ -8,11 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "deploy": "npm run build && firebase deploy",
-    "firebase:init": "node scripts/init-firebase.js",
-    "status": "node scripts/status-check.js",
-    "deploy:check": "node scripts/deploy-check.js",
     "firestore:create": "node scripts/create-firestore-db.js",
-    "cache:clear": "node scripts/clear-cache.js"
+    "firestore:clear": "node scripts/clear-firestore.js"
   },
   "dependencies": {
     "firebase": "^12.7.0",

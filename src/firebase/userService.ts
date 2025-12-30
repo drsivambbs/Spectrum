@@ -78,8 +78,10 @@ export class UserService {
   // Delete user
   static async deleteUser(userId: string): Promise<void> {
     try {
+      console.log('Attempting to delete user with ID:', userId);
       const userRef = doc(db, USERS_COLLECTION, userId);
       await deleteDoc(userRef);
+      console.log('Successfully deleted user from Firestore:', userId);
     } catch (error) {
       console.error('Error deleting user:', error);
       throw error;
