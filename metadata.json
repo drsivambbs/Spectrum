@@ -1,6 +1,6 @@
 {
   "name": "Spectrum",
-  "description": "A high-end, professional user management PWA with AI-powered profile generation and data analytics.",
+  "description": "A high-end, professional user management PWA for organizational member registry.",
   "requestFramePermissions": [
     "camera"
   ]

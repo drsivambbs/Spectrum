@@ -15,10 +15,12 @@ import {
   X,
   User as UserIcon,
   Circle,
-  FileText
+  FileText,
+  Loader2
 } from 'lucide-react';
 import { User, Designation, District, UserStatus, Gender } from '../types';
 import UserForm from './UserForm';
+import { UserService } from '../firebase/userService';
 
 const UserDetailModal: React.FC<{ 
   user: User; 
@@ -169,6 +171,8 @@ const UserManagement: React.FC = () => {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [filterDesignation, setFilterDesignation] = useState<string>('All');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const SYSTEM_ADMIN: User = {
     id: 'admin',
@@ -183,20 +187,77 @@ const UserManagement: React.FC = () => {
     createdAt: new Date().toISOString()
   };
 
-  useEffect(() => {
-    const saved = localStorage.getItem('usersphere_users');
-    let loadedUsers: User[] = [];
-    if (saved) { try { loadedUsers = JSON.parse(saved); } catch (e) { console.error(e); } }
-    if (!loadedUsers.some(u => u.id === 'admin')) {
-      loadedUsers = [SYSTEM_ADMIN, ...loadedUsers];
-      localStorage.setItem('usersphere_users', JSON.stringify(loadedUsers));
+  // Load users from Firebase
+  const loadUsers = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // Test Firestore connection first
+      const connectionTest = await UserService.testConnection();
+      if (!connectionTest) {
+        throw new Error('Firestore connection failed');
+      }
+      
+      // Try to load from Firebase first
+      const firebaseUsers = await UserService.getAllUsers();
+      
+      // Always include system admin
+      const allUsers = [SYSTEM_ADMIN, ...firebaseUsers.filter(u => u.id !== 'admin')];
+      setUsers(allUsers);
+      
+      // Fallback to localStorage if Firebase fails and no users exist
+      if (firebaseUsers.length === 0) {
+        const saved = localStorage.getItem('usersphere_users');
+        if (saved) {
+          try {
+            const localUsers: User[] = JSON.parse(saved);
+            const filteredLocalUsers = localUsers.filter(u => u.id !== 'admin');
+            setUsers([SYSTEM_ADMIN, ...filteredLocalUsers]);
+          } catch (e) {
+            console.error('Error parsing localStorage users:', e);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Error loading users:', err);
+      setError(`Failed to load users: ${err.message}. Using offline mode.`);
+      
+      // Fallback to localStorage
+      const saved = localStorage.getItem('usersphere_users');
+      if (saved) {
+        try {
+          const localUsers: User[] = JSON.parse(saved);
+          setUsers(localUsers.some(u => u.id === 'admin') ? localUsers : [SYSTEM_ADMIN, ...localUsers]);
+        } catch (e) {
+          setUsers([SYSTEM_ADMIN]);
+        }
+      } else {
+        setUsers([SYSTEM_ADMIN]);
+      }
+    } finally {
+      setLoading(false);
     }
-    setUsers(loadedUsers);
   }, []);
 
-  const saveUsers = useCallback((newUsers: User[]) => {
+  useEffect(() => {
+    loadUsers();
+  }, [loadUsers]);
+
+  // Save users to both Firebase and localStorage
+  const saveUsers = useCallback(async (newUsers: User[]) => {
     setUsers(newUsers);
+    
+    // Always save to localStorage as backup
     localStorage.setItem('usersphere_users', JSON.stringify(newUsers));
+    
+    // Try to sync with Firebase
+    try {
+      // Note: This is a simplified approach. In a real app, you'd sync individual changes
+      console.log('Users updated locally. Firebase sync would happen here.');
+    } catch (err) {
+      console.error('Error syncing to Firebase:', err);
+    }
   }, []);
 
   const filteredUsers = useMemo(() => {
@@ -207,39 +268,75 @@ const UserManagement: React.FC = () => {
     });
   }, [users, searchTerm, filterDesignation]);
 
-  const handleSaveUser = (userData: Partial<User>) => {
-    if (editingUser) {
-      const updated = users.map(u => u.id === editingUser.id ? { ...u, ...userData } as User : u);
-      saveUsers(updated);
-    } else {
-      const newUser = { ...userData, createdAt: new Date().toISOString() } as User;
-      saveUsers([newUser, ...users]);
+  const handleSaveUser = async (userData: Partial<User>) => {
+    try {
+      setError(null);
+      
+      if (editingUser) {
+        // Update existing user
+        if (editingUser.id !== 'admin') {
+          await UserService.updateUser(editingUser.id, userData);
+        }
+        const updated = users.map(u => u.id === editingUser.id ? { ...u, ...userData } as User : u);
+        setUsers(updated);
+        localStorage.setItem('usersphere_users', JSON.stringify(updated));
+      } else {
+        // Add new user
+        const newUserData = { ...userData, createdAt: new Date().toISOString() } as Omit<User, 'id'>;
+        const newUserId = await UserService.addUser(newUserData);
+        const newUser = { ...newUserData, id: newUserId } as User;
+        const updated = [newUser, ...users];
+        setUsers(updated);
+        localStorage.setItem('usersphere_users', JSON.stringify(updated));
+      }
+      
+      setIsFormModalOpen(false);
+      setEditingUser(null);
+      setSelectedUser(null);
+    } catch (err) {
+      console.error('Error saving user:', err);
+      setError('Failed to save user. Please try again.');
     }
-    setIsFormModalOpen(false);
-    setEditingUser(null);
-    setSelectedUser(null);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (id === 'admin') return;
+    
     if (window.confirm('Confirm record termination?')) {
-      saveUsers(users.filter(u => u.id !== id));
-      setSelectedUser(null);
+      try {
+        setError(null);
+        await UserService.deleteUser(id);
+        const updated = users.filter(u => u.id !== id);
+        setUsers(updated);
+        localStorage.setItem('usersphere_users', JSON.stringify(updated));
+        setSelectedUser(null);
+      } catch (err) {
+        console.error('Error deleting user:', err);
+        setError('Failed to delete user. Please try again.');
+      }
     }
   };
 
   return (
     <div className="space-y-4">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded text-sm">
+          {error}
+        </div>
+      )}
+      
       <div className="flex items-center justify-between gap-4 bg-white p-4 rounded border border-slate-200">
         <div>
           <h1 className="text-base font-black text-slate-900 uppercase tracking-tight flex items-center gap-2">
             <Users size={16} className="text-slate-900" />
             Registry
+            {loading && <Loader2 size={14} className="animate-spin text-slate-400" />}
           </h1>
         </div>
         <button 
           onClick={() => { setEditingUser(null); setIsFormModalOpen(true); }}
-          className="bg-slate-900 hover:bg-slate-800 text-white px-3 py-1.5 rounded text-[11px] font-black flex items-center gap-1.5 transition-colors"
+          disabled={loading}
+          className="bg-slate-900 hover:bg-slate-800 text-white px-3 py-1.5 rounded text-[11px] font-black flex items-center gap-1.5 transition-colors disabled:opacity-50"
         >
           <Plus size={14} />
           Register
@@ -271,7 +368,12 @@ const UserManagement: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
-        {filteredUsers.length > 0 ? (
+        {loading ? (
+          <div className="col-span-full py-12 bg-white border border-slate-200 rounded flex flex-col items-center justify-center text-slate-400">
+            <Loader2 size={24} className="animate-spin text-slate-300 mb-2" />
+            <p className="text-[11px] font-bold uppercase tracking-widest">Loading Registry</p>
+          </div>
+        ) : filteredUsers.length > 0 ? (
           filteredUsers.map((user) => (
             <UserCard 
               key={user.id} 

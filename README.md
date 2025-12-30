@@ -1,20 +1,74 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Spectrum PWA - Firebase Edition
 
-# Run and deploy your AI Studio app
+A professional user management PWA with Firebase backend integration.
 
-This contains everything you need to run your app locally.
+## Features
 
-View your app in AI Studio: https://ai.studio/apps/drive/15ti0N0UeI5KgOQcc3Zhph7671ZsmVFOZ
+- 🔥 **Firebase Integration**: Real-time database with Firestore
+- 📱 **Progressive Web App**: Installable, offline-capable
+- 🔐 **Authentication**: Secure user management
+- 📊 **Analytics**: Firebase Analytics integration
+- 🎨 **Modern UI**: Tailwind CSS with responsive design
+- ⚡ **Fast Development**: Vite build system
 
-## Run Locally
+## Firebase Setup
 
-**Prerequisites:**  Node.js
+This project is configured to work with Firebase project: `spectrum-bccb4`
 
+### Firebase Services Used:
+- **Firestore**: User data storage
+- **Analytics**: Usage tracking
+- **Hosting**: Deployment to `spectrum2026.web.app`
+
+## Local Development
+
+**Prerequisites:** Node.js and Firebase CLI
 
 1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+   ```bash
+   npm install
+   ```
+
+2. Install Firebase CLI (if not already installed):
+   ```bash
+   npm install -g firebase-tools
+   ```
+
+3. Login to Firebase:
+   ```bash
+   firebase login
+   ```
+
+4. Run the development server:
+   ```bash
+   npm run dev
+   ```
+
+## Deployment
+
+Deploy to Firebase Hosting:
+
+```bash
+npm run deploy
+```
+
+This will:
+1. Build the production version
+2. Deploy to Firebase Hosting at `spectrum2026.web.app`
+
+## Project Structure
+
+```
+Spectrum/
+├── src/
+│   ├── components/          # React components
+│   ├── firebase/           # Firebase configuration & services
+│   │   ├── config.ts       # Firebase app initialization
+│   │   └── userService.ts  # Firestore user operations
+│   ├── App.tsx            # Main application
+│   ├── index.tsx          # Entry point
+│   └── types.ts           # TypeScript definitions
+├── firebase.json          # Firebase hosting configuration
+├── .firebaserc           # Firebase project configuration
+└── dist/                 # Build output (auto-generated)
+```

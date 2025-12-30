@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { Shield, Key, User as UserIcon, AlertCircle, Eye, EyeOff, LogIn } from 'lucide-react';
 import { User, Designation } from '../types';
+import { UserService } from '../firebase/userService';
 
 interface LoginProps {
   onLogin: (user: Partial<User>) => void;
@@ -14,7 +15,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
@@ -22,10 +23,8 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     const cleanId = userId.trim();
     const cleanPassword = password.trim();
 
-    setTimeout(() => {
-      const savedUsers = localStorage.getItem('usersphere_users');
-      const users: User[] = savedUsers ? JSON.parse(savedUsers) : [];
-
+    try {
+      // Check for system admin first
       if (cleanId.toLowerCase() === 'admin' && cleanPassword === 'password123') {
         onLogin({
           id: 'admin',
@@ -35,14 +34,31 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
         return;
       }
 
-      const foundUser = users.find(u => u.id === cleanId && u.password === cleanPassword);
+      // Try Firebase authentication
+      const foundUser = await UserService.findUserByCredentials(cleanId, cleanPassword);
       if (foundUser) {
         onLogin(foundUser);
-      } else {
-        setError('Verification failed. Invalid credentials.');
-        setIsLoading(false);
+        return;
       }
-    }, 400);
+
+      // Fallback to localStorage
+      const savedUsers = localStorage.getItem('usersphere_users');
+      if (savedUsers) {
+        const users: User[] = JSON.parse(savedUsers);
+        const localUser = users.find(u => u.id === cleanId && u.password === cleanPassword);
+        if (localUser) {
+          onLogin(localUser);
+          return;
+        }
+      }
+
+      setError('Verification failed. Invalid credentials.');
+    } catch (err) {
+      console.error('Login error:', err);
+      setError('Authentication service unavailable. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (

@@ -15,6 +15,7 @@ import {
   ShieldCheck
 } from 'lucide-react';
 import { User } from './types';
+import './firebase/config'; // Initialize Firebase
 
 const Sidebar = ({ isOpen, setIsOpen, user, onLogout }: { 
   isOpen: boolean; 
